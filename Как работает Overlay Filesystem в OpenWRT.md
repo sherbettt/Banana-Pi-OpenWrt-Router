@@ -75,12 +75,12 @@ cat /proc/mtd
 ```
 ```c
 dev:    size   erasesize  name
-mtd0: 00040000 00010000 "bl2-nor"
-mtd1: 000c0000 00010000 "factory"
-mtd2: 00080000 00010000 "fip-nor"
-mtd3: 00c80000 00010000 "recovery"
-mtd4: 00100000 00020000 "bl2"
-mtd5: 0ff00000 00020000 "ubi"
+mtd0: 00040000 00010000 "bl2-nor"    # 256KB - Bootloader stage 2 (NOR)
+mtd1: 000c0000 00010000 "factory"    # 768KB - Factory calibration data
+mtd2: 00080000 00010000 "fip-nor"    # 512KB - FIP (Firmware Image Package)
+mtd3: 00c80000 00010000 "recovery"    # 12.5MB - Recovery/Factory firmware
+mtd4: 00100000 00020000 "bl2"        # 1MB - Bootloader stage 2 (NAND)
+mtd5: 0ff00000 00020000 "ubi"        # 255MB - UBI с overlay (ваша система)
 ```
 
 # Просмотр содержимого .itb файла (требует установки dtc)
