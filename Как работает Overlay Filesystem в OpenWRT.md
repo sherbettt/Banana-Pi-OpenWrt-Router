@@ -84,6 +84,7 @@ mtd5: 0ff00000 00020000 "ubi"
 ```
 
 # Просмотр содержимого .itb файла (требует установки dtc)
+```bash
 opkg install dtc
 dumpimage -l firmware.itb
 ```
