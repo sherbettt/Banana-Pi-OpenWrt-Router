@@ -1,4 +1,7 @@
 # 📚 Полная инструкция по обновлению Banana Pi OpenWrt Router EU (OpenWrt One/BPi-R4)
+См. офф. док.:
+- [Upgrading OpenWrt firmware using CLI](https://openwrt.org/docs/guide-user/installation/sysupgrade.cli)
+- [Upgrading OpenWrt firmware using LuCI and CLI](https://openwrt.org/docs/guide-user/installation/generic.sysupgrade)
 
 ## 🎯 **Цель обновления**
 Переход с проблемной **SNAPSHOT версии OpenWrt** на стабильную **OpenWrt 24.10.5** для решения проблем с репозиториями пакетов.
@@ -55,6 +58,7 @@ cat /etc/opkg/distfeeds.conf
 3. **Официальная документация:**
    - [OpenWrt One](https://openwrt.org/toh/openwrt/one)
    - [Quick start guide for OpenWrt installation](https://openwrt.org/docs/guide-quick-start/start)
+   - [Sinovoip BananaPi BPI-R4](https://openwrt.org/inbox/toh/sinovoip/bananapi_bpi-r4)
 <br/>
 
 
@@ -716,6 +720,7 @@ uci set firewall.@rule[-1].target='REJECT'  # Или DROP
 **Главное правило:** Меняйте фаервол через `uci` — это сохранит настройки после перезагрузки. Прямые команды `nft` — только для временных тестов!
 
 --------------------------
+
 
 
 
