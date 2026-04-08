@@ -45,6 +45,7 @@ cat /etc/opkg/distfeeds.conf
 - [Загрузить прошивку OpenWrt для вашего устройства](https://firmware-selector.openwrt.org/?version=24.10.5&target=mediatek%2Ffilogic&id=bananapi_bpi-r4)
 - [Mirrors with firmwares](https://mirror-03.infra.openwrt.org/releases/24.10.5/targets/mediatek/filogic/)
 - [downloads.openwrt.org/releases/24.10.5/targets/mediatek/filogic/](https://downloads.openwrt.org/releases/24.10.5/targets/mediatek/filogic/)
+- [downloads.openwrt.org/releases/25.12.2/targets/mediatek/filogic/](https://downloads.openwrt.org/releases/25.12.2/targets/mediatek/filogic/)
 
 ### **Ключевые ресурсы:**
 1. **Firmware Selector:** https://firmware-selector.openwrt.org
