@@ -368,6 +368,7 @@ uci set network.wan.device='eth0'
 uci set network.wan.device='wan'
 
 uci commit network
+uci show | grep network
 /etc/init.d/network restart
 ```
 
@@ -380,6 +381,7 @@ ping -c 4 google.com
 
 # Проверяем, что PPPoE интерфейс появился
 ifconfig pppoe-wan
+uci show | grep network.wan
 ```
 
 ---
