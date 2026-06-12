@@ -1,4 +1,193 @@
-## Добавление NVME диска
+## Добавление NVMe диска в OpenWrt 25.12.4 (с учётом APK)
+
+**Важно:** В версии 25.12.4 используется пакетный менеджер `apk` вместо `opkg`. Все команды ниже адаптированы под новую систему.
+
+---
+
+### Предварительная проверка
+
+```bash
+# 1. Проверяем, увидел ли ядро NVMe контроллер
+dmesg | grep -i nvme
+
+# 2. Проверяем, виден ли диск на PCIe шине
+cat /proc/bus/pci/devices | grep -i 1e4b
+
+# 3. Смотрим, какие блочные устройства уже есть
+lsblk
+```
+
+---
+
+### Установка драйвера и утилит
+
+```bash
+# 4. Обновляем списки пакетов (аналог opkg update)
+apk update
+
+# 5. Устанавливаем драйвер NVMe (КРИТИЧЕСКИ ВАЖНО!)
+apk add kmod-nvme
+
+# 6. Устанавливаем утилиты для работы с дисками и файловой системой
+apk add fdisk gdisk e2fsprogs block-mount
+
+# 7. Загружаем драйвер вручную (если не загрузился автоматически)
+modprobe nvme
+
+# 8. Проверяем, появился ли диск
+lsblk
+# Должны увидеть: nvme0n1 и nvme0n1p1 (если раздел уже был)
+```
+
+---
+
+### Создание раздела (если диск новый)
+
+```bash
+# 9. Создаём один primary-раздел на весь диск
+fdisk /dev/nvme0n1
+# В интерактивном режиме:
+# n (новый раздел)
+# p (primary)
+# 1 (номер раздела)
+# Enter (начало по умолчанию)
+# Enter (конец по умолчанию)
+# w (записать изменения)
+
+# Или автоматически (без интерактива):
+echo -e "o\nn\np\n1\n\n\nw" | fdisk /dev/nvme0n1
+```
+
+---
+
+### Форматирование раздела
+
+```bash
+# 10. Форматируем раздел в ext4 с меткой
+mkfs.ext4 -L nvme_data /dev/nvme0n1p1
+
+# 11. Проверяем созданную файловую систему
+blkid /dev/nvme0n1p1
+```
+
+---
+
+### Ручное монтирование
+
+```bash
+# 12. Создаём точку монтирования
+mkdir -p /mnt/nvme
+
+# 13. Монтируем вручную для проверки
+mount /dev/nvme0n1p1 /mnt/nvme
+
+# 14. Проверяем, сколько места доступно
+df -h /mnt/nvme
+
+# 15. Проверяем права доступа
+ls -la /mnt/nvme/
+```
+
+---
+
+### Настройка автоматического монтирования
+
+```bash
+# 16. Генерируем шаблон fstab
+block detect > /etc/config/fstab.new
+
+# 17. Просматриваем сгенерированный шаблон
+cat /etc/config/fstab.new
+
+# 18. Добавляем в основной конфиг (если нужно)
+cat /etc/config/fstab.new >> /etc/config/fstab
+
+# 19. Или настраиваем через UCI (рекомендуется)
+uci set fstab.@mount[0]=mount
+uci set fstab.@mount[0].device='/dev/nvme0n1p1'
+uci set fstab.@mount[0].target='/mnt/nvme'
+uci set fstab.@mount[0].fstype='ext4'
+uci set fstab.@mount[0].options='rw,noatime'
+uci set fstab.@mount[0].enabled='1'
+uci set fstab.@mount[0].enabled_fsck='0'
+uci commit fstab
+
+# 20. Включаем и запускаем сервис монтирования
+/etc/init.d/fstab enable
+/etc/init.d/fstab restart
+
+# 21. Проверяем, что диск примонтировался автоматически
+mount | grep nvme
+df -h /mnt/nvme
+```
+
+---
+
+### Создание полезных директорий
+
+```bash
+# 22. Создаём структуру папок для хранения данных
+mkdir -p /mnt/nvme/{backups,downloads,logs,opkg_cache}
+
+# 23. Настраиваем логи на NVMe (опционально)
+cat >> /etc/config/system << EOF
+
+config system
+    option log_file '/mnt/nvme/logs/system.log'
+    option log_size '8192'
+EOF
+
+# 24. Перезапускаем логирование
+/etc/init.d/log restart
+```
+
+---
+
+### Проверка итогового результата
+
+```bash
+# 25. Финальная проверка
+echo "=== Блочные устройства ===" && lsblk
+echo "=== Монтирование ===" && mount | grep nvme
+echo "=== Свободное место ===" && df -h /mnt/nvme
+echo "=== Содержимое ===" && ls -la /mnt/nvme/
+```
+
+---
+
+## 📝 Что нужно запомнить про OpenWrt 25.12.4:
+
+| Вместо `opkg` | Используйте `apk` |
+|---------------|-------------------|
+| `opkg update` | `apk update` |
+| `opkg install` | `apk add` |
+| `opkg remove` | `apk del` |
+| `opkg list-installed` | `apk info` |
+
+**Ключевое отличие:** В 25.12.4 драйвер `kmod-nvme` НЕ входит в базовую прошивку, его нужно устанавливать отдельно через `apk add kmod-nvme`.
+
+---
+
+## 🎯 Итог
+
+После выполнения всех шагов вы получите:
+- **238.5 ГБ** дополнительного пространства в `/mnt/nvme`
+- Автоматическое монтирование при загрузке
+- Возможность хранить бэкапы, логи, загрузки и другие данные
+- NVMe диск **не трогается** при обновлении прошивки
+
+**Ваши данные в безопасности даже после `sysupgrade`!** 🚀
+
+-------------------------------
+<br/>
+
+
+
+## Добавление NVMe диска в OpenWrt
+
+---
+
+### 📌 Для версии 24.10.5 (с пакетным менеджером `opkg`)
 
 ```bash
 # 1. Проверяем, увидел ли ядро диск
@@ -48,308 +237,123 @@ uci commit fstab
 df -h
 ```
 
-**Для чего всё это:**  
+---
 
-теперь 233 ГБ свободного места всегда доступны в `/mnt/nvme` – кладём туда торренты, бэкапы, Docker-контейнеры, базы AdGuardHome, Samba/NFS-шары и т.д., не трогая встроенную NAND.
+### 📌 Для версии 25.12.4 и новее (с пакетным менеджером `apk`)
 
---------------------------------
-<br/>
-
-
-
-## **Анализ блочных устройств:**
-
-Текущие данные
-```bash
-root@OpenWrt:~# cat  /etc/config/fstab
-
-config global
-        option anon_swap '0'
-        option anon_mount '0'
-        option auto_swap '1'
-        option auto_mount '1'
-        option delay_root '5'
-        option check_fs '0'
-
-config mount
-        option target '/mnt/nvme'
-        option uuid '1e69df50-8428-4048-a410-6cd33e821777'
-        option enabled '1'
-        option device '/dev/nvme0n1p1'
-        option fstype 'ext4'
-        option options 'rw,noatime'
-        option enabled_fsck '0'
-
-config mount
-        option target '/rom'
-        option uuid '54bda554-68d27cb6-759396e4-8ac8f5c0'
-        option enabled '0'
-```
+**Важно:** В версии 25.12.4 драйвер `kmod-nvme` НЕ входит в базовую прошивку — его нужно установить отдельно!
 
 ```bash
-root@OpenWrt:~# lsblk
-NAME        MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
-mtdblock0    31:0    0   256K  0 disk
-mtdblock1    31:1    0   768K  1 disk
-mtdblock2    31:2    0   512K  0 disk
-mtdblock3    31:3    0  12.5M  0 disk
-mtdblock4    31:4    0     1M  1 disk
-mtdblock5    31:5    0   255M  0 disk
-ubiblock0_4 254:0    0  10.3M  0 disk
-fit0        259:0    0   4.8M  1 disk /rom
-nvme0n1     259:1    0 238.5G  0 disk
-└─nvme0n1p1 259:2    0 238.5G  0 part /mnt/nvme
-```
+# 1. Проверяем, увидел ли ядро NVMe контроллер
+dmesg | grep -i nvme
 
+# 2. Проверяем, виден ли диск на PCIe шине
+cat /proc/bus/pci/devices | grep -i 1e4b
 
-### **1. MTD устройства (Memory Technology Device) - флеш-память роутера:**
-```c
-mtdblock0    31:0    0   256K  0 disk  # Вероятно, bootloader или раздел с DTB
-mtdblock1    31:1    0   768K  1 disk  # Скорее всего, загрузчик с резервной копией
-mtdblock2    31:2    0   512K  0 disk  # Раздел с конфигурацией загрузчика
-mtdblock3    31:3    0  12.5M  0 disk  # Ядро и initramfs (fit0 монтируется отсюда)
-mtdblock4    31:4    0     1M  1 disk  # Резервный раздел
-mtdblock5    31:5    0   255M  0 disk  # Основная файловая система UBI
-```
+# 3. Смотрим, какие блочные устройства уже есть
+lsblk
 
-### **2. UBI (Unsorted Block Images) - основной раздел:**
-```
-ubiblock0_4 254:0    0  10.3M  0 disk  # Сжатый read-only корневой раздел
-fit0        259:0    0   4.8M  1 disk /rom  # Фактически монтированная ОС (read-only)
-```
+# 4. Обновляем списки пакетов (аналог opkg update)
+apk update
 
-### **3. NVMe диск:**
-```
-nvme0n1     259:1    0 238.5G  0 disk         # Весь физический диск NVMe
-└─nvme0n1p1 259:2    0 238.5G  0 part /mnt/nvme  # Раздел, смонтированный как /mnt/nvme
-```
+# 5. Устанавливаем драйвер NVMe (КРИТИЧЕСКИ ВАЖНО!)
+apk add kmod-nvme
 
-## **Где стоит ОС и как устроена файловая система:**
+# 6. Устанавливаем утилиты для работы с дисками и файловой системой
+apk add fdisk gdisk e2fsprogs block-mount
 
-### **Текущая структура монтирования:**
-```
-/dev/root                 5.0M      5.0M         0 100% /rom
-/dev/ubi0_5             200.9M     24.4M    171.8M  12% /overlay
-overlayfs:/overlay      200.9M     24.4M    171.8M  12% /
-```
+# 7. Загружаем драйвер вручную (если не загрузился автоматически)
+modprobe nvme
 
-**Объяснение:**
-1. **`/rom`** - Read-Only Memory (5MB)
-   - Монтируется с `fit0` (из mtdblock3)
-   - Содержит базовую систему OpenWRT
-   - Нельзя изменять (только для чтения)
+# 8. Проверяем, появился ли диск
+lsblk
+# Должны увидеть: nvme0n1 и nvme0n1p1 (если раздел уже был)
 
-2. **`/overlay`** - Overlay файловая система (200.9MB)
-   - Монтируется с `ubi0_5` (mtdblock5)
-   - Это **ВАША основная ОС** с возможностью записи
-   - Все изменения, установка пакетов, конфиги хранятся здесь
+# 9. Создаём один primary-раздел на весь диск (если диск новый)
+echo -e "o\nn\np\n1\n\n\nw" | fdisk /dev/nvme0n1
 
-3. **`/`** (корневая файловая система)
-   - Это overlayfs, которая объединяет `/rom` (read-only) + `/overlay` (read-write)
-   - При чтении: сначала проверяется `/overlay`, если файла нет - берется из `/rom`
-   - При записи: все идет в `/overlay`
+# 10. Форматируем раздел в ext4 с меткой
+mkfs.ext4 -L nvme_data /dev/nvme0n1p1
 
-## **Что можно сделать с NVMe для улучшения системы:**
+# 11. Проверяем созданную файловую систему
+blkid /dev/nvme0n1p1
 
-### **Вариант 1: Перенос overlay на NVMe** (рекомендуется):
-```bash
-# 1. Остановить сервисы, использующие overlay
-/etc/init.d/logd stop
-/etc/init.d/uhttpd stop
+# 12. Создаём точку монтирования
+mkdir -p /mnt/nvme
 
-# 2. Скопировать overlay на NVMe
-mkdir -p /mnt/nvme/overlay
-cp -a /overlay/* /mnt/nvme/overlay/
+# 13. Монтируем вручную для проверки
+mount /dev/nvme0n1p1 /mnt/nvme
 
-# 3. Изменить fstab
-uci set fstab.overlay="mount"
-uci set fstab.overlay.device="/dev/nvme0n1p1"
-uci set fstab.overlay.target="/overlay"
-uci set fstab.overlay.fstype="ext4"
-uci set fstab.overlay.options="rw,noatime"
-uci set fstab.overlay.enabled="1"
+# 14. Проверяем, сколько места доступно
+df -h /mnt/nvme
+
+# 15. Генерируем шаблон fstab
+block detect > /etc/config/fstab.new
+
+# 16. Добавляем в основной конфиг
+cat /etc/config/fstab.new >> /etc/config/fstab
+
+# 17. Или настраиваем через UCI (рекомендуется)
+uci set fstab.@mount[0]=mount
+uci set fstab.@mount[0].device='/dev/nvme0n1p1'
+uci set fstab.@mount[0].target='/mnt/nvme'
+uci set fstab.@mount[0].fstype='ext4'
+uci set fstab.@mount[0].options='rw,noatime'
+uci set fstab.@mount[0].enabled='1'
+uci set fstab.@mount[0].enabled_fsck='0'
 uci commit fstab
 
-# 4. Или вручную отредактировать /etc/config/fstab:
-# config mount
-#     option target '/overlay'
-#     option device '/dev/nvme0n1p1'
-#     option fstype 'ext4'
-#     option options 'rw,noatime'
-#     option enabled '1'
-```
+# 18. Включаем и запускаем сервис монтирования
+/etc/init.d/fstab enable
+/etc/init.d/fstab restart
 
-### **Вариант 2: Расширение overlay через симлинки:**
-```bash
-# Перенести самые объемные директории
-mkdir -p /mnt/nvme/overlay_files
-mv /overlay/usr/lib /mnt/nvme/overlay_files/
-ln -s /mnt/nvme/overlay_files/lib /overlay/usr/lib
-```
+# 19. Проверяем, что диск примонтировался автоматически
+mount | grep nvme
+df -h /mnt/nvme
 
-### **Вариант 3: Использовать NVMe для конкретных служб:**
-```bash
-# Docker (если будете использовать)
-opkg install docker
-uci set docker.overlay.path='/mnt/nvme/docker'
-uci commit docker
-
-# Torrent клиент
-opkg install transmission-daemon
-uci set transmission.@transmission[0].download_dir='/mnt/nvme/downloads'
-uci commit transmission
-```
-
-## **Рекомендации:**
-1. **Сейчас ОС работает с флеш-памяти (mtdblock5)**, что ограничивает:
-   - Место для пакетов (всего 200MB)
-   - Скорость записи
-   - Долговечность флеш-памяти
-
-2. **NVMe можно использовать для:**
-   - Увеличения overlay (Вариант 1 - лучший)
-   - Хранения логов
-   - Бекапов
-   - Кэширования DNS/web
-   - Медиасервера
-
-3. **Проверить текущее использование overlay:**
-```bash
-du -sh /overlay/* | sort -hr
-```
-
---------------------------------
-<br/>
-
-
-
-## 🎯 **Суть в двух словах:**
-
-**OpenWRT на роутере состоит из 2 частей:**
-
-1. **`/rom`** - базовая система (5MB, только чтение) ← **это обновляется через `.itb`**
-2. **`/overlay`** - ваши настройки и программы (200MB, запись) ← **это НЕ трогается**
-
-```
-[ ВАШ РОУТЕР СЕЙЧАС ]
-┌──────────────────────────────┐
-│ /rom (5MB) + /overlay (200MB)│ = система
-└──────────────────────────────┘
-        ↑
-   [NVMe 256GB] - просто диск для хранения
-```
-
-## 🔄 **Что происходит при обновлении:**
-
-```
-ДО: /rom(v1) + /overlay(ваши настройки) = система v1
-     sysupgrade openwrt_one.itb
-     ↓
-ПОСЛЕ: /rom(v2) + /overlay(те же настройки) = система v2
-```
-
-**NVMe диск вообще не затрагивается!**
-
-## 🛠️ **Что можно хранить на NVMe БЕЗ проблем:**
-
-### **1. Просто файлы (самый простой способ):**
-```bash
-# Создать папки
-mkdir -p /mnt/nvme/{backups,downloads,logs}
-
-# Делать бэкапы туда
-sysupgrade -b /mnt/nvme/backups/мои_настройки.tar.gz
-
-# Хранить логи
-logread > /mnt/nvme/logs/system.log
-```
-
-### **2. Если мало места в /overlay (200MB):**
-```bash
-# Например, папка opkg весит много
-# Переносим её на NVMe:
-
-# 1. Копируем на NVMe
-cp -r /overlay/usr/lib/opkg /mnt/nvme/
-
-# 2. Удаляем со флеш-памяти
-rm -rf /overlay/usr/lib/opkg
-
-# 3. Делаем ссылку
-ln -s /mnt/nvme/opkg /overlay/usr/lib/opkg
-```
-
-## 📁 **Практический пример - мой роутер:**
-
-У меня так:
-```
-/mnt/nvme/
-├── backups/      # бэкапы настроек
-├── downloads/    # торренты, файлы
-├── logs/         # логи за месяц
-└── opkg_cache/   # кэш пакетов (большой!)
-```
-
-## 🔧 **Простая инструкция:**
-
-### **Шаг 1: Создать структуру папок**
-```bash
+# 20. Создаём структуру папок для хранения данных
 mkdir -p /mnt/nvme/{backups,downloads,logs,opkg_cache}
+
+# 21. Финальная проверка
+echo "=== Блочные устройства ===" && lsblk
+echo "=== Монтирование ===" && mount | grep nvme
+echo "=== Свободное место ===" && df -h /mnt/nvme
 ```
 
-### **Шаг 2: Настроить логи на NVMe**
-```bash
-# Редактируем конфиг
-mcedit /etc/config/system
-```
-Меняем:
-```bash
-option log_file '/mnt/nvme/logs/system.log'
-option log_size '8192'  # 8MB логов вместо 64KB
-```
+---
 
-### **Шаг 3: Обновить кэш пакетов**
-```bash
-# Создаем ссылку
-ln -sf /mnt/nvme/opkg_cache /var/cache/opkg
-```
+## 📊 Сравнение команд для разных версий
 
-### **Шаг 4: Бэкап перед обновлением**
-```bash
-# Перед обновлением системы:
-sysupgrade -b /mnt/nvme/backups/настройки_перед_апдейтом.tar.gz
-```
+| Действие | OpenWrt 24.10.5 | OpenWrt 25.12.4+ |
+|----------|-----------------|------------------|
+| Обновить списки пакетов | `opkg update` | `apk update` |
+| Установить драйвер NVMe | `opkg install kmod-nvme` | `apk add kmod-nvme` |
+| Установить утилиты | `opkg install fdisk ...` | `apk add fdisk ...` |
+| Загрузить драйвер | автоматически | `modprobe nvme` (может потребоваться) |
+| Показать блочные устройства | `lsblk` (если установлен) или `cat /proc/partitions` | `lsblk` |
 
-## ❓ **Частые вопросы:**
+---
 
-**Вопрос:** А если я обновлю прошивку (.itb), мои файлы на NVMe пропадут?
-**Ответ:** НЕТ! NVMe - это просто внешний диск, как флешка. Его не трогают при обновлении.
+## ⚠️ Важные особенности версии 25.12.4+
 
-**Вопрос:** Нужно ли что-то настраивать после обновления?
-**Ответ:** Только если делали ссылки (ln -s). Их нужно пересоздать.
+1. **Драйвер NVMe нужно устанавливать отдельно** — команда `apk add kmod-nvme` обязательна
+2. После установки драйвера может потребоваться `modprobe nvme` или перезагрузка
+3. Менеджер пакетов `apk` вместо `opkg`
+4. В остальном процесс идентичен
 
-**Вопрос:** Можно ли вообще всю систему на NVMe перенести?
-**Ответ:** Можно, но сложно и обновления будут проблемными. Не рекомендую.
+---
 
+## 🎯 Для чего всё это
 
-**Пример использования:**
-```bash
-# Скачать что-то большое
-wget -O /mnt/nvme/downloads/большой_файл.zip http://example.com/file.zip
+Теперь **до 256 ГБ** свободного места всегда доступны в `/mnt/nvme` – кладём туда:
+- торренты
+- бэкапы настроек
+- Docker-контейнеры
+- базы AdGuardHome
+- Samba/NFS-шары
+- логи системы
+- кэш пакетов
 
-# Посмотреть логи за вчера
-grep "Jan 17" /mnt/nvme/logs/system.log
-
-# Сделать бэкап
-sysupgrade -b /mnt/nvme/backups/$(date +%Y%m%d).tar.gz
-```
-
---------------------------------
-<br/>
-
-
-
-
-
+**NVMe диск не трогается при обновлении прошивки!** 🚀
 
 
